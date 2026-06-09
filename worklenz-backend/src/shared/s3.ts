@@ -9,7 +9,7 @@ import {
   S3Client
 } from "@aws-sdk/client-s3";
 import {isProduction, isTestServer, log_error} from "./utils";
-import {BUCKET, REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_URL} from "./constants";
+import {BUCKET, REGION, S3_ACCESS_KEY_ID, S3_PUBLIC_URL, S3_SECRET_ACCESS_KEY, S3_URL} from "./constants";
 import {getSignedUrl} from "@aws-sdk/s3-request-presigner";
 import mime from "mime";
 
@@ -21,6 +21,20 @@ const s3Client = new S3Client({
     secretAccessKey: S3_SECRET_ACCESS_KEY || "",
   },
   endpoint: S3_URL,
+  forcePathStyle: true,
+});
+
+// Client used only to sign browser-facing presigned URLs. It points at the
+// public (browser-reachable) endpoint so the signature matches the host the
+// browser actually requests. Falls back to the internal endpoint when
+// S3_PUBLIC_URL is unset (single-host / direct-access setups).
+const s3PublicClient = new S3Client({
+  region: REGION,
+  credentials: {
+    accessKeyId: S3_ACCESS_KEY_ID || "",
+    secretAccessKey: S3_SECRET_ACCESS_KEY || "",
+  },
+  endpoint: S3_PUBLIC_URL,
   forcePathStyle: true,
 });
 
@@ -133,5 +147,5 @@ export async function createPresignedUrlWithClient(key: string, file: string) {
     ResponseContentType: `${contentType}`,
     ResponseContentDisposition: `attachment; filename=${file}`,
   });
-  return getSignedUrl(s3Client, command, {expiresIn: 3600});
+  return getSignedUrl(s3PublicClient, command, {expiresIn: 3600});
 }

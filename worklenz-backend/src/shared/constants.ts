@@ -153,6 +153,12 @@ export const DEFAULT_PAGE_SIZE = 20;
 export const REGION = process.env.S3_REGION || "us-east-1";
 export const BUCKET = process.env.S3_BUCKET || "your-bucket-name";
 export const S3_URL = process.env.S3_URL || "https://your-s3-url";
+// Browser-facing endpoint used when building object URLs/presigned links.
+// S3_URL is the internal endpoint the backend uses to talk to the object store
+// (e.g. http://minio:9000), which is NOT reachable from a user's browser.
+// Set S3_PUBLIC_URL to a browser-reachable base (e.g. https://your-domain) that
+// is reverse-proxied to the object store. Falls back to S3_URL when unset.
+export const S3_PUBLIC_URL = process.env.S3_PUBLIC_URL || S3_URL;
 export const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || "";
 export const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || "";
 
@@ -167,15 +173,15 @@ export const AZURE_STORAGE_URL = process.env.AZURE_STORAGE_URL;
 export function getStorageUrl() {
   if (STORAGE_PROVIDER === "azure") {
     if (!AZURE_STORAGE_URL) {
-      console.warn("AZURE_STORAGE_URL is not defined, falling back to S3_URL");
-      return S3_URL + "/" + BUCKET;
+      console.warn("AZURE_STORAGE_URL is not defined, falling back to S3_PUBLIC_URL");
+      return S3_PUBLIC_URL + "/" + BUCKET;
     }
 
     // Return just the base Azure Blob Storage URL
     // AZURE_STORAGE_URL should be in the format: https://storageaccountname.blob.core.windows.net
     return `${AZURE_STORAGE_URL}/${AZURE_STORAGE_CONTAINER}`;
   }
-  return S3_URL + "/" + BUCKET;
+  return S3_PUBLIC_URL + "/" + BUCKET;
 }
 
 export const TASK_STATUS_COLOR_ALPHA = "69";

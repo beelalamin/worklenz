@@ -152,7 +152,7 @@ services:
 
   # Backend API
   backend:
-    image: chamikajaycey/worklenz-backend:${BACKEND_VERSION:-2.1.6}
+    image: beelalamin/worklenz-backend:${BACKEND_VERSION:-latest}
     build:
       context: ./worklenz-backend
       dockerfile: Dockerfile
@@ -198,6 +198,16 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
       S3_URL: ${S3_URL:-http://minio:9000}
+      # Backend code reads S3_* names (see worklenz-backend/src/shared/constants.ts),
+      # so mirror the AWS_* values here or bucket/credentials fall back to broken defaults.
+      S3_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${AWS_BUCKET:-worklenz-bucket}
+      S3_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
+      # Browser-reachable storage endpoint. S3_URL (http://minio:9000) is internal
+      # only; object/attachment URLs shown to users must go through nginx at the
+      # public origin. Defaults to FRONTEND_URL; override per environment.
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-${FRONTEND_URL:-https://localhost}}
 
       # Azure Blob Storage Configuration (Advanced mode)
       AZURE_STORAGE_ACCOUNT_NAME: ${AZURE_STORAGE_ACCOUNT_NAME:-}
@@ -240,7 +250,7 @@ services:
 
   # Frontend Application
   frontend:
-    image: chamikajaycey/worklenz-frontend:${FRONTEND_VERSION:-2.1.6}
+    image: beelalamin/worklenz-frontend:${FRONTEND_VERSION:-latest}
     build:
       context: ./worklenz-frontend
       dockerfile: Dockerfile
@@ -291,7 +301,10 @@ services:
       - certbot_www:/var/www/certbot:ro
       - nginx_logs:/var/log/nginx
     networks:
+      # Also attach to the backend network so nginx can reach the MinIO
+      # object store (worklenz-bucket location) to serve attachments.
       - worklenz-frontend
+      - worklenz-backend
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
       interval: 30s

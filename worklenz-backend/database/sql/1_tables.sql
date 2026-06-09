@@ -782,7 +782,9 @@ CREATE TABLE IF NOT EXISTS projects (
     estimated_working_days INTEGER                  DEFAULT 0,
     use_manual_progress    BOOLEAN                  DEFAULT FALSE              NOT NULL,
     use_weighted_progress  BOOLEAN                  DEFAULT FALSE              NOT NULL,
-    use_time_progress      BOOLEAN                  DEFAULT FALSE              NOT NULL
+    use_time_progress      BOOLEAN                  DEFAULT FALSE              NOT NULL,
+    currency               TEXT                     DEFAULT 'USD'::TEXT,
+    budget                 NUMERIC                  DEFAULT NULL
 );
 
 ALTER TABLE projects
@@ -1036,7 +1038,8 @@ CREATE TABLE IF NOT EXISTS roles (
     team_id      UUID                               NOT NULL,
     default_role BOOLEAN DEFAULT FALSE              NOT NULL,
     admin_role   BOOLEAN DEFAULT FALSE              NOT NULL,
-    owner        BOOLEAN DEFAULT FALSE              NOT NULL
+    owner        BOOLEAN DEFAULT FALSE              NOT NULL,
+    key          TEXT
 );
 
 ALTER TABLE roles
