@@ -104,17 +104,12 @@ jobs:
 
             # Pin the running images to this exact commit so the repo is the
             # single source of truth for what's deployed (rollback = redeploy
-            # an older SHA). Written to .env so the state is durable on the box.
-            set_env() {
-              key="$1"; val="$2"
-              if grep -q "^${key}=" .env 2>/dev/null; then
-                sed -i "s|^${key}=.*|${key}=${val}|" .env
-              else
-                echo "${key}=${val}" >> .env
-              fi
-            }
-            set_env BACKEND_VERSION  "${{ github.sha }}"
-            set_env FRONTEND_VERSION "${{ github.sha }}"
+            # an older SHA). Written to .env so the state is durable on the box:
+            # strip any previous pins, then append the current ones.
+            touch .env
+            sed -i '/^BACKEND_VERSION=/d; /^FRONTEND_VERSION=/d' .env
+            printf 'BACKEND_VERSION=%s\nFRONTEND_VERSION=%s\n' \
+              "${{ github.sha }}" "${{ github.sha }}" >> .env
 
             # Pull the freshly built images and recreate only what changed.
             docker compose pull backend frontend
