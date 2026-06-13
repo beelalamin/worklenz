@@ -1,26 +1,25 @@
 name: Deploy
 
-# Builds the backend & frontend Docker images, pushes them to Docker Hub
-# (matching the image names used in docker-compose.yaml), then deploys to a
-# Docker host over SSH by pulling the new images and restarting the stack.
+# Builds the backend & frontend Docker images on a GitHub-hosted runner and
+# pushes them to Docker Hub (matching the image names used in
+# docker-compose.yaml), then deploys on a SELF-HOSTED runner installed on the
+# server itself — pulling the new images and restarting the stack locally.
+# No inbound SSH is required, so there is no public port 22 to expose.
 #
 # ──────────────────────────────────────────────────────────────────────────
 # Required GitHub repository secrets (Settings → Secrets and variables → Actions):
 #   DOCKERHUB_USERNAME  Docker Hub username (must match the image prefix in
 #                       docker-compose.yaml, e.g. "beelalamin").
 #   DOCKERHUB_TOKEN     Docker Hub access token (Account → Security → New token).
-#   SSH_HOST            Server hostname or IP.
-#   SSH_USER            SSH user on the server (must be able to run docker).
-#   SSH_KEY             Private SSH key (PEM) authorized on the server.
 #   DEPLOY_PATH         Absolute path to the cloned repo on the server
 #                       (the directory containing docker-compose.yaml).
-# Optional secrets:
-#   SSH_PORT            SSH port (defaults to 22).
 #
 # Server prerequisites (one-time):
 #   - git, docker and the docker compose plugin installed.
 #   - This repository cloned at DEPLOY_PATH with a configured .env file.
-#   - The SSH_USER able to `git pull` and run docker without a password prompt.
+#   - A self-hosted GitHub Actions runner registered to this repo
+#     (Settings → Actions → Runners → New self-hosted runner) and running as a
+#     service, under a user that can `git pull` in DEPLOY_PATH and run docker.
 # ──────────────────────────────────────────────────────────────────────────
 
 on:
@@ -81,52 +80,50 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
 
   deploy:
-    name: Deploy over SSH
+    name: Deploy on server
     needs: build-and-push
-    runs-on: ubuntu-latest
+    # Runs on the self-hosted runner installed on the server, so the commands
+    # below execute locally on the box — no SSH, no inbound port to open.
+    runs-on: [self-hosted]
+    env:
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      SHA: ${{ github.sha }}
     steps:
-      - name: Pull images and restart stack on server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          script_stop: true
-          script: |
-            set -euo pipefail
-            cd "${{ secrets.DEPLOY_PATH }}"
+      - name: Pull images and restart stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$DEPLOY_PATH"
 
-            # Sync compose / nginx / sql changes from the repo.
-            git fetch --all --prune
-            git checkout main
-            git pull --ff-only origin main
+          # Sync compose / nginx / sql changes from the repo.
+          git fetch --all --prune
+          git checkout main
+          git pull --ff-only origin main
 
-            # Pin the running images to this exact commit so the repo is the
-            # single source of truth for what's deployed (rollback = redeploy
-            # an older SHA). Written to .env so the state is durable on the box:
-            # strip any previous pins, then append the current ones.
-            touch .env
-            sed -i '/^BACKEND_VERSION=/d; /^FRONTEND_VERSION=/d' .env
-            printf 'BACKEND_VERSION=%s\nFRONTEND_VERSION=%s\n' \
-              "${{ github.sha }}" "${{ github.sha }}" >> .env
+          # Pin the running images to this exact commit so the repo is the
+          # single source of truth for what's deployed (rollback = redeploy
+          # an older SHA). Written to .env so the state is durable on the box:
+          # strip any previous pins, then append the current ones.
+          touch .env
+          sed -i '/^BACKEND_VERSION=/d; /^FRONTEND_VERSION=/d' .env
+          printf 'BACKEND_VERSION=%s\nFRONTEND_VERSION=%s\n' "$SHA" "$SHA" >> .env
 
-            # Pull the freshly built images and recreate only what changed.
-            docker compose pull backend frontend
-            docker compose up -d --remove-orphans
+          # Pull the freshly built images and recreate only what changed.
+          docker compose pull backend frontend
+          docker compose up -d --remove-orphans
 
-            # Wait for the backend healthcheck to report healthy.
-            echo "Waiting for backend to become healthy..."
-            for i in $(seq 1 30); do
-              status="$(docker inspect --format '{{.State.Health.Status}}' worklenz-backend 2>/dev/null || echo starting)"
-              echo "  backend: $status"
-              [ "$status" = "healthy" ] && break
-              sleep 5
-            done
-            if [ "$status" != "healthy" ]; then
-              echo "Backend did not become healthy in time"; exit 1
-            fi
+          # Wait for the backend healthcheck to report healthy.
+          echo "Waiting for backend to become healthy..."
+          for i in $(seq 1 30); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' worklenz-backend 2>/dev/null || echo starting)"
+            echo "  backend: $status"
+            [ "$status" = "healthy" ] && break
+            sleep 5
+          done
+          if [ "$status" != "healthy" ]; then
+            echo "Backend did not become healthy in time"; exit 1
+          fi
 
-            # Reclaim disk from old image layers.
-            docker image prune -f
-            echo "Deploy complete."
+          # Reclaim disk from old image layers.
+          docker image prune -f
+          echo "Deploy complete."
